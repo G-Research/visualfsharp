@@ -299,7 +299,7 @@
       </trans-unit>
       <trans-unit id="5033">
         <source>A blank XML file</source>
-        <target state="translated">空白 XML 檔</target>
+        <target state="translated">空的 XML 檔</target>
         <note />
       </trans-unit>
       <trans-unit id="5034">
@@ -433,13 +433,13 @@
         <note />
       </trans-unit>
       <trans-unit id="ProductDetails">
-        <source>Microsoft Visual F# Tools 10.2 for F# 4.5</source>
-        <target state="translated">Microsoft Visual F# Tools 10.2 for F# 4.5</target>
+        <source>Microsoft Visual F# Tools {{FSProductVersion}} for F# {{FSLanguageVersion}}</source>
+        <target state="needs-review-translation">適用於 F# {{FSLanguageVersion}} 的 Microsoft Visual F# Tools {{FSProductVersion}}</target>
         <note />
       </trans-unit>
       <trans-unit id="9002">
-        <source>Microsoft Visual F# Tools 10.2 for F# 4.5</source>
-        <target state="translated">Microsoft Visual F# Tools 10.2 for F# 4.5</target>
+        <source>Microsoft Visual F# Tools {{FSProductVersion}} for F# {{FSLanguageVersion}}</source>
+        <target state="needs-review-translation">適用於 F# {{FSLanguageVersion}} 的 Microsoft Visual F# Tools {{FSProductVersion}}</target>
         <note />
       </trans-unit>
       <trans-unit id="ProductID">
@@ -453,8 +453,8 @@
         <note />
       </trans-unit>
       <trans-unit id="9001">
-        <source>Visual F# Tools 10.2 for F# 4.5</source>
-        <target state="translated">Visual F# Tools 10.2 for F# 4.5</target>
+        <source>Visual F# Tools {{FSProductVersion}} for F# {{FSLanguageVersion}}</source>
+        <target state="needs-review-translation">適用於 F# {{FSLanguageVersion}} 的 Visual F# Tools {{FSProductVersion}}</target>
         <note />
       </trans-unit>
       <trans-unit id="9027">

@@ -2,7 +2,7 @@
 
 module internal Microsoft.VisualStudio.FSharp.Interactive.Session
 
-open Microsoft.FSharp.Compiler
+open FSharp.Compiler
 open System
 open System.IO
 open System.Text
@@ -42,9 +42,9 @@ type internal EventWrapper() =
 /// Exceptions raised by f x are caught and reported in DEBUG mode.
 let timeoutApp descr timeoutMS (f : 'a -> 'b) (arg:'a) =
     use ev = new EventWrapper()
-    let r : 'b option ref = ref None
+    let mutable r = None
     System.Threading.ThreadPool.QueueUserWorkItem(fun _ ->
-        r := 
+        r <-
             try
                 f arg |> Some
             with
@@ -63,10 +63,10 @@ let timeoutApp descr timeoutMS (f : 'a -> 'b) (arg:'a) =
         ev.Set() 
     ) |> ignore
     ev.WaitOne(timeoutMS) |> ignore
-    !r
+    r
 
 module SessionsProperties = 
-    let mutable useAnyCpuVersion = false
+    let mutable useAnyCpuVersion = true // 64-bit by default
     let mutable fsiArgs = "--optimize"
     let mutable fsiShadowCopy = true
     let mutable fsiDebugMode = false
@@ -139,7 +139,7 @@ let determineFsiRelativePath1 () =
 
 // This path is relative to the location of "FSharp.Compiler.Interactive.Settings.dll"
 let determineFsiRelativePath2 () =
-    let thisAssembly : System.Reflection.Assembly = typeof<Microsoft.FSharp.Compiler.Server.Shared.FSharpInteractiveServer>.Assembly
+    let thisAssembly : System.Reflection.Assembly = typeof<FSharp.Compiler.Server.Shared.FSharpInteractiveServer>.Assembly
     let thisAssemblyDirectory = thisAssembly.Location |> Path.GetDirectoryName
     // Use the quick-development path if available    
     Path.Combine(thisAssemblyDirectory,fsiExeName() )
@@ -286,7 +286,7 @@ type FsiSession() =
     do cmdProcess.EnableRaisingEvents <- true
 
     let client   = 
-        try Microsoft.FSharp.Compiler.Server.Shared.FSharpInteractiveServer.StartClient(channelName)
+        try FSharp.Compiler.Server.Shared.FSharpInteractiveServer.StartClient(channelName)
         with e -> raise (SessionError (VFSIstrings.SR.exceptionRaisedWhenCreatingRemotingClient(e.ToString())))
 
     /// interrupt timeout in miliseconds 

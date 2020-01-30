@@ -10,7 +10,7 @@ To run tests, use variations such as the following, depending on which test suit
     build.cmd vs test
     build.cmd all test
 
-You can also submit pull requests to http://github.com/Microsoft/visualfsharp and run the tests via continuous integration. Most people do wholesale testing that way.
+You can also submit pull requests to https://github.com/dotnet/fsharp and run the tests via continuous integration. Most people do wholesale testing that way.
 
 ## Prerequisites
 
@@ -46,7 +46,7 @@ There are also negative tests checking code expected to fail compilation. See no
 
 ### FSharpQA Suite
 
-The FSharpQA suite relies on [Perl](http://www.perl.org/get.html), StrawberryPerl64 package from nuget is used automatically by the test suite.
+The FSharpQA suite relies on [Perl](http://www.perl.org/get.html), StrawberryPerl package from nuget is used automatically by the test suite.
 
 These tests use the `RunAll.pl` framework to execute, however the easiest way to run them is via the `build.cmd` script, see [usage examples](https://github.com/Microsoft/visualfsharp/blob/master/build.cmd#L31).
 

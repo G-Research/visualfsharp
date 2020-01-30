@@ -5,12 +5,19 @@ namespace Tests.LanguageService.ErrorList
 open System
 open System.IO
 open NUnit.Framework
+open Microsoft.VisualStudio.FSharp
 open Salsa.Salsa
 open Salsa.VsOpsUtils
 open UnitTests.TestLib.Salsa
 open UnitTests.TestLib.Utils
 open UnitTests.TestLib.LanguageService
 open UnitTests.TestLib.ProjectSystem
+
+[<SetUpFixture>]
+type public AssemblyResolverTestFixture () =
+
+    [<OneTimeSetUp>]
+    member public __.Init () = AssemblyResolver.addResolver ()
 
 [<TestFixture>]
 [<Category "LanguageService">] 
@@ -55,13 +62,19 @@ type UsingMSBuild() as this =
     member private this.VerifyErrorListCountAtOpenProject(fileContents : string, num : int) =
         let (solution, project, file) = this.CreateSingleFileProject(fileContents)
         let errorList = GetErrors(project)
+        let errorTexts = new System.Text.StringBuilder()
         for error in errorList do
             printfn "%A" error.Severity
-            printf "%s\n" (error.ToString()) 
-        if (num = errorList.Length) then 
-                ()
-            else
-                failwithf "The error list number is not the expected %d" num
+            let s = error.ToString()
+            errorTexts.AppendLine s |> ignore
+            printf "%s\n" s 
+
+        if num <> errorList.Length then 
+            failwithf "The error list number is not the expected %d but %d%s%s" 
+                num 
+                errorList.Length
+                System.Environment.NewLine
+                (errorTexts.ToString())
 
     //Verify the warning list Count
     member private this.VerifyWarningListCountAtOpenProject(fileContents : string, expectedNum : int, ?addtlRefAssy : list<string>) = 
@@ -365,7 +378,7 @@ type staticInInterface =
     [<Category("TypeProvider")>]
     [<Category("TypeProvider.MultipleErrors")>]
     member public this.``TypeProvider.MultipleErrors`` () =
-        let tpRef = PathRelativeToTestAssembly(@"UnitTests\MockTypeProviders\DummyProviderForLanguageServiceTesting.dll")
+        let tpRef = PathRelativeToTestAssembly(@"DummyProviderForLanguageServiceTesting.dll")
         let checkList n = 
             printfn "===TypeProvider.MultipleErrors: %d===" n
             let content = sprintf "type Err = TPErrors.TP<%d>" n
@@ -437,7 +450,7 @@ type staticInInterface =
 but here has type
     'int'    """
         this.VerifyErrorListContainedExpectedString(fileContent,expectedStr,
-            addtlRefAssy = [PathRelativeToTestAssembly(@"UnitTests\MockTypeProviders\DummyProviderForLanguageServiceTesting.dll")])
+            addtlRefAssy = [PathRelativeToTestAssembly(@"DummyProviderForLanguageServiceTesting.dll")])
     
     [<Test>]
     [<Category("TypeProvider")>]
@@ -451,7 +464,7 @@ but here has type
         let expectedStr = "An error occurred applying the static arguments to a provided type"
        
         this.VerifyErrorListContainedExpectedString(fileContent,expectedStr,
-            addtlRefAssy = [PathRelativeToTestAssembly(@"UnitTests\MockTypeProviders\DummyProviderForLanguageServiceTesting.dll")])
+            addtlRefAssy = [PathRelativeToTestAssembly(@"DummyProviderForLanguageServiceTesting.dll")])
    
     [<Test>]
     [<Category("TypeProvider")>]
@@ -465,7 +478,7 @@ but here has type
         let expectedStr = "The static parameter 'ParamIgnored' of the provided type or method 'T' requires a value. Static parameters to type providers may be optionally specified using named arguments, e.g. 'T<ParamIgnored=...>'."
        
         this.VerifyErrorListContainedExpectedString(fileContent,expectedStr,
-            addtlRefAssy = [PathRelativeToTestAssembly(@"UnitTests\MockTypeProviders\DummyProviderForLanguageServiceTesting.dll")])
+            addtlRefAssy = [PathRelativeToTestAssembly(@"DummyProviderForLanguageServiceTesting.dll")])
     [<Test>]
     [<Category("TypeProvider")>]
     member public this.``TypeProvider.ProhibitedMethods`` () =
@@ -480,7 +493,7 @@ but here has type
                 (
                     code,
                     sprintf "Array method '%s' is supplied by the runtime and cannot be directly used in code." str,
-                    addtlRefAssy = [PathRelativeToTestAssembly(@"UnitTests\MockTypeProviders\DummyProviderForLanguageServiceTesting.dll")]
+                    addtlRefAssy = [PathRelativeToTestAssembly(@"DummyProviderForLanguageServiceTesting.dll")]
                 )    
     
     [<Test>]
@@ -505,7 +518,7 @@ but here has type
                             type foo = N1.T< 
                                 const "Hello World",2>""",
             expectedNum = 1,
-            addtlRefAssy = [PathRelativeToTestAssembly(@"UnitTests\MockTypeProviders\DummyProviderForLanguageServiceTesting.dll")]) 
+            addtlRefAssy = [PathRelativeToTestAssembly(@"DummyProviderForLanguageServiceTesting.dll")]) 
     
     [<Test>]
     [<Category("TypeProvider")>]
@@ -516,7 +529,7 @@ but here has type
          this.VerifyNoErrorListAtOpenProject(
             fileContents = """
                             type foo = N1.T< const "Hello World",2>""",
-            addtlRefAssy = [PathRelativeToTestAssembly(@"UnitTests\MockTypeProviders\DummyProviderForLanguageServiceTesting.dll")]) 
+            addtlRefAssy = [PathRelativeToTestAssembly(@"DummyProviderForLanguageServiceTesting.dll")]) 
     
 
     [<Test>]
@@ -533,6 +546,7 @@ but here has type
         Assert.IsTrue(errorList.IsEmpty)
 
     [<Test>]
+    [<Ignore("https://github.com/Microsoft/visualfsharp/issues/6166")>]
     member public this.``UnicodeCharactors``() = 
         use _guard = this.UsingNewVS()
         let solution = this.CreateSolution()

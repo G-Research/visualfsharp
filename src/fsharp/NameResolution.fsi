@@ -1,19 +1,20 @@
 // Copyright (c) Microsoft Corporation.  All Rights Reserved.  See License.txt in the project root for license information.
 
-module internal Microsoft.FSharp.Compiler.NameResolution
+module internal FSharp.Compiler.NameResolution
 
-open Microsoft.FSharp.Compiler 
-open Microsoft.FSharp.Compiler.AccessibilityLogic
-open Microsoft.FSharp.Compiler.Ast
-open Microsoft.FSharp.Compiler.Infos
-open Microsoft.FSharp.Compiler.Range
-open Microsoft.FSharp.Compiler.Import
-open Microsoft.FSharp.Compiler.InfoReader
-open Microsoft.FSharp.Compiler.Tast
-open Microsoft.FSharp.Compiler.Tastops
-open Microsoft.FSharp.Compiler.TcGlobals
-open Microsoft.FSharp.Compiler.AbstractIL.Internal.Library
-open Microsoft.FSharp.Compiler.PrettyNaming
+open FSharp.Compiler
+open FSharp.Compiler.AccessibilityLogic
+open FSharp.Compiler.Ast
+open FSharp.Compiler.Infos
+open FSharp.Compiler.Range
+open FSharp.Compiler.Import
+open FSharp.Compiler.InfoReader
+open FSharp.Compiler.Tast
+open FSharp.Compiler.Tastops
+open FSharp.Compiler.TcGlobals
+open FSharp.Compiler.AbstractIL.Internal.Library
+open FSharp.Compiler.PrettyNaming
+open FSharp.Compiler.Text
 
 /// A NameResolver is a context for name resolution. It primarily holds an InfoReader.
 type NameResolver =
@@ -21,6 +22,7 @@ type NameResolver =
     member InfoReader : InfoReader
     member amap : ImportMap
     member g : TcGlobals
+    member languageSupportsNameOf : bool
 
 /// Get the active pattern elements defined in a module, if any. Cache in the slot in the module type.
 val ActivePatternElemsOfModuleOrNamespace : ModuleOrNamespaceRef -> NameMap<ActivePatternElemRef>
@@ -63,6 +65,9 @@ type Item =
 
     /// Represents the resolution of a name to an F# record field.
     | RecdField of RecdFieldInfo
+
+    /// Represents the resolution of a name to a field of an anonymous record type.
+    | AnonRecdField of AnonRecdTypeInfo * TTypes * int * range
 
     // The following are never in the items table but are valid results of binding 
     // an identifier in different circumstances. 
@@ -136,25 +141,68 @@ val ItemWithNoInst : Item -> ItemWithInst
 type FieldResolution = FieldResolution of RecdFieldRef * bool
 
 /// Information about an extension member held in the name resolution environment
-[<Sealed>]
-type ExtensionMember 
+type ExtensionMember =
+   /// F#-style Extrinsic extension member, defined in F# code
+   | FSExtMem of ValRef * ExtensionMethodPriority
+
+   /// ILExtMem(declaringTyconRef, ilMetadata, pri)
+   ///
+   /// IL-style extension member, backed by some kind of method with an [<Extension>] attribute
+   | ILExtMem of TyconRef * MethInfo * ExtensionMethodPriority
+
+   /// Describes the sequence order of the introduction of an extension method. Extension methods that are introduced
+   /// later through 'open' get priority in overload resolution.
+   member Priority : ExtensionMethodPriority
 
 /// The environment of information used to resolve names
 [<NoEquality; NoComparison>]
 type NameResolutionEnv =
-    {eDisplayEnv: DisplayEnv
-     eUnqualifiedItems: LayeredMap<string,Item>
-     ePatItems: NameMap<Item>
-     eModulesAndNamespaces: NameMultiMap<ModuleOrNamespaceRef>
-     eFullyQualifiedModulesAndNamespaces: NameMultiMap<ModuleOrNamespaceRef>
-     eFieldLabels: NameMultiMap<RecdFieldRef>
-     eTyconsByAccessNames: LayeredMultiMap<string,TyconRef>
-     eFullyQualifiedTyconsByAccessNames: LayeredMultiMap<string,TyconRef>
-     eTyconsByDemangledNameAndArity: LayeredMap<NameArityPair,TyconRef>
-     eFullyQualifiedTyconsByDemangledNameAndArity: LayeredMap<NameArityPair,TyconRef>
-     eIndexedExtensionMembers: TyconRefMultiMap<ExtensionMember>
-     eUnindexedExtensionMembers: ExtensionMember list
-     eTypars: NameMap<Typar> }
+    { /// Display environment information for output 
+      eDisplayEnv: DisplayEnv 
+
+      /// Values and Data Tags available by unqualified name 
+      eUnqualifiedItems: LayeredMap<string,Item>
+
+      /// Data Tags and Active Pattern Tags available by unqualified name 
+      ePatItems: NameMap<Item>
+
+      /// Modules accessible via "." notation. Note this is a multi-map. 
+      /// Adding a module abbreviation adds it a local entry to this List.map. 
+      /// Likewise adding a ccu or opening a path adds entries to this List.map. 
+      eModulesAndNamespaces:  NameMultiMap<Tast.ModuleOrNamespaceRef>
+
+      /// Fully qualified modules and namespaces. 'open' does not change this. 
+      eFullyQualifiedModulesAndNamespaces:  NameMultiMap<Tast.ModuleOrNamespaceRef>
+
+      /// RecdField labels in scope.  RecdField labels are those where type are inferred 
+      /// by label rather than by known type annotation. 
+      /// Bools indicate if from a record, where no warning is given on indeterminate lookup 
+      eFieldLabels: NameMultiMap<Tast.RecdFieldRef>
+
+      /// Tycons indexed by the various names that may be used to access them, e.g. 
+      ///     "List" --> multiple TyconRef's for the various tycons accessible by this name. 
+      ///     "List`1" --> TyconRef 
+      eTyconsByAccessNames: LayeredMultiMap<string,TyconRef>
+
+      eFullyQualifiedTyconsByAccessNames: LayeredMultiMap<string,TyconRef>
+
+      /// Tycons available by unqualified, demangled names (i.e. (List,1) --> TyconRef) 
+      eTyconsByDemangledNameAndArity: LayeredMap<NameArityPair,TyconRef>
+
+      /// Tycons available by unqualified, demangled names (i.e. (List,1) --> TyconRef) 
+      eFullyQualifiedTyconsByDemangledNameAndArity: LayeredMap<NameArityPair,TyconRef>
+
+      /// Extension members by type and name 
+      eIndexedExtensionMembers: TyconRefMultiMap<ExtensionMember>
+
+      /// Other extension members unindexed by type
+      eUnindexedExtensionMembers: ExtensionMember list
+
+      /// Typars (always available by unqualified names). Further typars can be 
+      /// in the tpenv, a structure folded through each top-level definition. 
+      eTypars: NameMap<Typar>
+
+    } 
     static member Empty : g:TcGlobals -> NameResolutionEnv
     member DisplayEnv : DisplayEnv
     member FindUnqualifiedItem : string -> Item
@@ -165,6 +213,9 @@ type FullyQualifiedFlag =
 
 [<RequireQualifiedAccess>]
 type BulkAdd = Yes | No
+
+/// Find a field in anonymous record type
+val internal TryFindAnonRecdFieldOfType : TcGlobals -> TType -> string -> Item option
 
 /// Add extra items to the environment for Visual Studio, e.g. static members 
 val internal AddFakeNamedValRefToNameEnv : string -> NameResolutionEnv -> ValRef -> NameResolutionEnv
@@ -179,7 +230,7 @@ val internal AddValRefToNameEnv                    : NameResolutionEnv -> ValRef
 val internal AddActivePatternResultTagsToNameEnv   : ActivePatternInfo -> NameResolutionEnv -> TType -> range -> NameResolutionEnv
 
 /// Add a list of type definitions to the name resolution environment 
-val internal AddTyconRefsToNameEnv                 : BulkAdd -> bool -> TcGlobals -> ImportMap -> range -> bool -> NameResolutionEnv -> TyconRef list -> NameResolutionEnv
+val internal AddTyconRefsToNameEnv                 : BulkAdd -> bool -> TcGlobals -> ImportMap -> AccessorDomain -> range -> bool -> NameResolutionEnv -> TyconRef list -> NameResolutionEnv
 
 /// Add an F# exception definition to the name resolution environment 
 val internal AddExceptionDeclsToNameEnv            : BulkAdd -> NameResolutionEnv -> TyconRef -> NameResolutionEnv
@@ -194,7 +245,7 @@ val internal AddModuleOrNamespaceRefsToNameEnv                   : TcGlobals -> 
 val internal AddModuleOrNamespaceRefToNameEnv                    : TcGlobals -> ImportMap -> range -> bool -> AccessorDomain -> NameResolutionEnv -> ModuleOrNamespaceRef -> NameResolutionEnv
 
 /// Add a list of modules or namespaces to the name resolution environment
-val internal AddModulesAndNamespacesContentsToNameEnv : TcGlobals -> ImportMap -> AccessorDomain -> range -> bool -> NameResolutionEnv -> ModuleOrNamespaceRef list -> NameResolutionEnv
+val internal AddEntitiesContentsToNameEnv : TcGlobals -> ImportMap -> AccessorDomain -> range -> bool -> NameResolutionEnv -> ModuleOrNamespaceRef list -> NameResolutionEnv
 
 /// A flag which indicates if it is an error to have two declared type parameters with identical names
 /// in the name resolution environment.
@@ -234,7 +285,7 @@ type TypeNameResolutionInfo =
   static member ResolveToTypeRefs : TypeNameResolutionStaticArgsInfo -> TypeNameResolutionInfo
 
 /// Represents the kind of the occurrence when reporting a name in name resolution
-[<RequireQualifiedAccess>]
+[<RequireQualifiedAccess; Struct>]
 type internal ItemOccurence = 
     | Binding 
     | Use 
@@ -313,14 +364,17 @@ type internal TcSymbolUses =
     member GetUsesOfSymbol : Item -> TcSymbolUseData[]
 
     /// All the uses of all items within the file
-    member AllUsesOfSymbols : TcSymbolUseData[]
+    member AllUsesOfSymbols : TcSymbolUseData[][]
 
     /// Get the locations of all the printf format specifiers in the file
     member GetFormatSpecifierLocationsAndArity : unit -> (range * int)[]
 
+    /// Empty collection of symbol uses
+    static member Empty : TcSymbolUses
+
 /// Represents open declaration statement.
 type internal OpenDeclaration =
-    { /// Long identifier as it's presented in soruce code.
+    { /// Long identifier as it's presented in source code.
       LongId: Ident list
       
       /// Full range of the open declaration.
@@ -338,12 +392,12 @@ type internal OpenDeclaration =
     /// Create a new instance of OpenDeclaration.
     static member Create : longId: Ident list * modules: ModuleOrNamespaceRef list * appliedScope: range * isOwnNamespace: bool -> OpenDeclaration
     
-/// Line-end normalized source text and an array of line end positions, used for format string parsing
+/// Source text and an array of line end positions, used for format string parsing
 type FormatStringCheckContext =
-    { /// Line-end normalized source text
-      NormalizedSource: string
-      /// Array of line end positions
-      LineEndPositions: int[] }
+    { /// Source text
+      SourceText: ISourceText
+      /// Array of line start positions
+      LineStartPositions: int[] }
 
 /// An abstract type for reporting the results of name resolution and type checking
 type ITypecheckResultsSink =
@@ -364,7 +418,7 @@ type ITypecheckResultsSink =
     abstract NotifyOpenDeclaration : OpenDeclaration -> unit
 
     /// Get the current source
-    abstract CurrentSource : string option
+    abstract CurrentSourceText : ISourceText option
 
     /// Cached line-end normalized source text and an array of line end positions, used for format string parsing
     abstract FormatStringCheckContext : FormatStringCheckContext option
@@ -373,7 +427,7 @@ type ITypecheckResultsSink =
 type internal TcResultsSinkImpl =
 
     /// Create a TcResultsSinkImpl
-    new : tcGlobals : TcGlobals * ?source:string -> TcResultsSinkImpl
+    new : tcGlobals : TcGlobals * ?sourceText: ISourceText -> TcResultsSinkImpl
 
     /// Get all the resolutions reported to the sink
     member GetResolutions : unit -> TcResolutions
@@ -392,6 +446,13 @@ type TcResultsSink =
     { mutable CurrentSink : ITypecheckResultsSink option }
     static member NoSink : TcResultsSink
     static member WithSink : ITypecheckResultsSink -> TcResultsSink
+
+
+/// Indicates if we only need one result or all possible results from a resolution.
+[<RequireQualifiedAccess>]
+type ResultCollectionSettings =
+    | AllResults
+    | AtMostOneResult
 
 /// Temporarily redirect reporting of name resolution and type checking results
 val internal WithNewTypecheckResultsSink : ITypecheckResultsSink * TcResultsSink -> System.IDisposable
@@ -415,13 +476,13 @@ val internal CallExprHasTypeSink        : TcResultsSink -> range * NameResolutio
 val internal CallOpenDeclarationSink    : TcResultsSink -> OpenDeclaration -> unit
 
 /// Get all the available properties of a type (both intrinsic and extension)
-val internal AllPropInfosOfTypeInScope : InfoReader -> NameResolutionEnv -> string option * AccessorDomain -> FindMemberFlag -> range -> TType -> PropInfo list
+val internal AllPropInfosOfTypeInScope : ResultCollectionSettings -> InfoReader -> NameResolutionEnv -> string option -> AccessorDomain -> FindMemberFlag -> range -> TType -> PropInfo list
 
 /// Get all the available properties of a type (only extension)
-val internal ExtensionPropInfosOfTypeInScope : InfoReader -> NameResolutionEnv -> string option * AccessorDomain  -> range -> TType -> PropInfo list
+val internal ExtensionPropInfosOfTypeInScope : ResultCollectionSettings -> InfoReader -> NameResolutionEnv -> string option -> AccessorDomain -> range -> TType -> PropInfo list
 
 /// Get the available methods of a type (both declared and inherited)
-val internal AllMethInfosOfTypeInScope : InfoReader -> NameResolutionEnv -> string option * AccessorDomain -> FindMemberFlag -> range -> TType -> MethInfo list
+val internal AllMethInfosOfTypeInScope : ResultCollectionSettings -> InfoReader -> NameResolutionEnv -> string option -> AccessorDomain -> FindMemberFlag -> range -> TType -> MethInfo list
 
 /// Used to report an error condition where name resolution failed due to an indeterminate type
 exception internal IndeterminateType of range
@@ -454,14 +515,8 @@ type PermitDirectReferenceToGeneratedType =
     | Yes 
     | No
 
-/// Indicates if we only need one result or all possible results from a resolution.
-[<RequireQualifiedAccess>]
-type ResultCollectionSettings =
-| AllResults
-| AtMostOneResult
-
-/// Resolve a long identifier to a namespace or module.
-val internal ResolveLongIndentAsModuleOrNamespace   : TcResultsSink -> ResultCollectionSettings -> Import.ImportMap -> range -> bool -> FullyQualifiedFlag -> NameResolutionEnv -> AccessorDomain -> Ident -> Ident list -> isOpenDecl: bool -> ResultOrException<(int * ModuleOrNamespaceRef * ModuleOrNamespaceType) list >
+/// Resolve a long identifier to a namespace, module or static class.
+val internal ResolveLongIndentAsModuleOrNamespaceOrStaticClass   : TcResultsSink -> ResultCollectionSettings -> Import.ImportMap -> range -> allowStaticClasses: bool -> first: bool -> FullyQualifiedFlag -> NameResolutionEnv -> AccessorDomain -> Ident -> Ident list -> isOpenDecl: bool -> ResultOrException<(int * ModuleOrNamespaceRef * ModuleOrNamespaceType) list >
 
 /// Resolve a long identifier to an object constructor.
 val internal ResolveObjectConstructor               : NameResolver -> DisplayEnv -> range -> AccessorDomain -> TType -> ResultOrException<Item>
@@ -533,3 +588,6 @@ val ResolveCompletionsInType       : NameResolver -> NameResolutionEnv -> Resolv
 val GetVisibleNamespacesAndModulesAtPoint : NameResolver -> NameResolutionEnv -> range -> AccessorDomain -> ModuleOrNamespaceRef list
 
 val IsItemResolvable : NameResolver -> NameResolutionEnv -> range -> AccessorDomain -> string list -> Item -> bool
+
+val TrySelectExtensionMethInfoOfILExtMem : range -> ImportMap -> TType -> TyconRef * MethInfo * ExtensionMethodPriority -> MethInfo option 
+ 
